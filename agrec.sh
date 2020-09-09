@@ -2,10 +2,16 @@
 
 set -u
 
+readonly SCRIPT_PATH="$(readlink -e $0)"
+readonly SCRIPT_DIR="$(dirname $SCRIPT_PATH)"
+readonly SOURCES_PATH="${SCRIPT_DIR%/}/sources"
+readonly SOURCE_PATH="${SCRIPT_DIR%/}/source"
+
 usage(){
   cat <<EOF
 Usage:
   $0 -h
+  $0 -c check
   $0 duration outpath
     duration - 録画時間[秒]
     outpath  - output filepath
@@ -22,25 +28,117 @@ Options:
 EOF
 }
 
-requirements(){
+show_requirements(){
   cat <<EOF
 Requirements:
   - rtmpdump
 EOF
 }
 
+# record <length> <out>
+record(){
+  local len="$1"
+  local out="$2"
+
+  local url="$(cat "${SOURCE_PATH}")"
+
+  if [[ -z $url ]]; then
+    echo "Please execute \`${0##*/} -c\`" >&2
+    return 1
+  fi
+  
+  # create output directory
+  local outDir=$(dirname "${out}")
+  if [[ ! -e "${outDir}" ]]; then
+    mkdir -p "${outDir}"
+  fi
+  
+  # recording
+  local log=$(mktemp -p . agrec.log.XXXXXX)
+  rtmpdump --rtmp $url --live --stop $len -o "$out" >$log 2>&1 \
+  || {
+    cat $log >&2
+
+    rm $log
+    return 1
+  } \
+  && {
+    rm $log
+  }
+  
+  # filesize & fullpath
+  local msg=$(cd "$outDir"; du -b "$(pwd)/${out##*/}")
+  msg=$(echo $msg) # tab --> space
+  
+  # if file is empty, exit with error
+  local filesize=${msg%% *}
+  if [[ "$filesize" = 0 ]]; then
+    {
+      echo 'ERROR: no data is captured.'
+      echo "$msg"
+    } >&2
+    return 1
+  fi
+  
+  # result
+  echo "$msg"
+  
+}
+
+check(){
+  local tmp="/tmp/agrec-check.mp4"
+
+  if [[ -e "$SOURCE_PATH" ]]; then 
+    local url="$(cat "$SOURCE_PATH")"
+    
+    if record 3 "$tmp"; then
+      echo "OK $url"
+      rm "$tmp"
+      return 0
+    fi
+  fi
+
+  # find
+  local srcs="$(cat "$SOURCES_PATH")"
+  for src in $srcs; do
+    echo "$src" > "$SOURCE_PATH"
+
+    if record 3 "$tmp"; then
+      echo "OK $src"
+      rm "$tmp"
+      return 0
+    else
+      echo "NG $src" 
+      rm "$tmp"
+    fi
+  done
+
+  echo "All CANDIDATES OF SOURCE ARE UNAVAILABLEE!!" >&2
+  rm "$tmp"
+  return 1
+}
+
+################################################################
+
 # options
-while getopts h opts
+while getopts hc opts
 do
   case $opts in
   h)
     usage
     exit 0
     ;;
+  c)
+    check
+    exit $?
+    ;;
   \?)
-    exit 1
+    exit 0
+    ;;
   esac
 done
+
+shift $((OPTIND - 1))
 
 # requirements
 readonly REQUIRED_CMDS="rtmpdump"
@@ -48,7 +146,7 @@ for cmd in $REQUIRED_CMDS
 do
   if ! type ${cmd} >/dev/null 2>&1; then
     echo "${cmd} not found." >&2
-    requirements
+    show_requirements
     exit 1
   fi
 done
@@ -56,45 +154,7 @@ done
 # arguments
 : $1 $2
 
-################################################################
-
-readonly DURATION="$1"
-readonly OUT_PATH="$2"
-
-readonly RTMP_URL="rtmp://fms-base2.mitene.ad.jp/agqr/aandg22"
-
-# create output directory
-readonly OUT_DIR=$(dirname "${OUT_PATH}")
-if [[ ! -e "${OUT_DIR}" ]]; then
-  mkdir -p "${OUT_DIR}"
-fi
-
-# recording
-readonly LOG=$(mktemp -p . agrec.log.XXXXXX)
-rtmpdump --rtmp ${RTMP_URL} --live --stop "${DURATION}" -o "${OUT_PATH}" >$LOG 2>&1 \
-|| {
-  cat $LOG 1>&2
-  exit 1
-}
-
-# filesize & fullpath
-msg=$(cd "$OUT_DIR"; du -b "$(pwd)/${OUT_PATH##*/}")
-msg=$(echo $msg) # tab --> space
-
-# if file is empty, exit with error
-readonly filesize=${msg%% *}
-if [[ "$filesize" = 0 ]]; then
-  {
-    echo 'ERROR: no data is captured.'
-    echo "$msg"
-  } >&2
-  exit 1
-fi
-
-# result
-echo "$msg"
-
-# finalize
-trap "
-rm $LOG
-" 0
+readonly LENGTH="$1"
+readonly OUTPUT="$2"
+record "$LENGTH" "$OUTPUT"
+exit $?
