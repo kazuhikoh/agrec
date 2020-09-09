@@ -87,14 +87,19 @@ record(){
 
 check(){
   local tmp="/tmp/agrec-check.mp4"
+  local len=1
 
   if [[ -e "$SOURCE_PATH" ]]; then 
     local url="$(cat "$SOURCE_PATH")"
     
-    if record 3 "$tmp"; then
-      echo "OK $url"
+    echo "$url"
+
+    if record $len "$tmp"; then
+      echo "--> OK"
       rm "$tmp"
       return 0
+    else
+      echo "--> NG"
     fi
   fi
 
@@ -103,18 +108,22 @@ check(){
   for src in $srcs; do
     echo "$src" > "$SOURCE_PATH"
 
-    if record 3 "$tmp"; then
-      echo "OK $src"
+    echo "$src"
+
+    if record $len "$tmp"; then
+      echo "--> OK"
       rm "$tmp"
-      return 0
+      return 1
     else
-      echo "NG $src" 
+      echo "--> NG" 
       rm "$tmp"
     fi
   done
 
-  echo "All CANDIDATES OF SOURCE ARE UNAVAILABLEE!!" >&2
-  rm "$tmp"
+  echo ""
+  echo "  All STREAMING ENDPOINTS ARE UNAVAILABLE!!"
+  echo ""
+
   return 1
 }
 
