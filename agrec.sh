@@ -31,7 +31,7 @@ EOF
 show_requirements(){
   cat <<EOF
 Requirements:
-  - rtmpdump
+  - ffmpeg 
 EOF
 }
 
@@ -55,7 +55,8 @@ record(){
   
   # recording
   local log=$(mktemp -p . agrec.log.XXXXXX)
-  rtmpdump --rtmp $url --live --stop $len -o "$out" >$log 2>&1 \
+
+  ffmpeg -i $url -c copy -t $len "$out" >$log 2>&1 \
   || {
     cat $log >&2
 
@@ -82,7 +83,6 @@ record(){
   
   # result
   echo "$msg"
-  
 }
 
 check(){
@@ -150,7 +150,7 @@ done
 shift $((OPTIND - 1))
 
 # requirements
-readonly REQUIRED_CMDS="rtmpdump"
+readonly REQUIRED_CMDS="ffmpeg"
 for cmd in $REQUIRED_CMDS
 do
   if ! type ${cmd} >/dev/null 2>&1; then
